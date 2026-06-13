@@ -66,6 +66,7 @@ def ssh_connection(result_test_connection):
                 stdin_1m, stdout_1m, stderr_1m = ssh.exec_command("cat /proc/loadavg | awk '{print $1}'")
                 stdin_5m, stdout_5m, stderr_5m = ssh.exec_command("cat /proc/loadavg | awk '{print $2}'")
                 stdin_15m, stdout_15m, stderr_15m = ssh.exec_command("cat /proc/loadavg | awk '{print $3}'")
+                stdin_nproc, stdout_nproc, stdeer_nproc = ssh.exec_command("nproc")
                 stdin_close, stdout_close, stderr_close = ssh.exec_command('exit')
                 hostname = stdout_hostname.read().decode().strip()
                 uptime = stdout_uptime.read().decode().strip()
@@ -74,22 +75,26 @@ def ssh_connection(result_test_connection):
                 load_1m = stdout_1m.read().decode().strip()
                 load_5m = stdout_5m.read().decode().strip()
                 load_15m = stdout_15m.read().decode().strip()
+                nproc = stdout_nproc.read().decode().strip()
                 ssh_connection_result.append((
-                    ip, hostname, uptime, disk, memory, load_1m, load_5m, load_15m))
+                    ip, hostname, uptime, disk, memory, load_1m, load_5m, load_15m, nproc))
             except:
                 ssh_connection_result.append((
-                    ip, "unknown", "N/A", "N/A", "N/A", "N/A", "N/A", "SSH Failed"
+                    ip, "unknown", "N/A", "N/A", "N/A", "N/A", "N/A", "N/A", "SSH Failed"
                 ))
     return ssh_connection_result
 
 
-def healt_evaluation(ssh_connection_result):
-    for ip, hostname, uptime, disk, memory, load_1m, load_5m, load_15m in ssh_connection_result:
-        try:
-            status = [] 
+def health_evaluation(ssh_connection_result):
+    overal_status = []
+    for ip, hostname, uptime, disk, memory, load_1m, load_5m, load_15m, nproc in ssh_connection_result:
+        if nproc != "SSH Failed":
+            status = []
             disk_number = int(disk.replace("%", ""))
             memory_number = float(memory.replace("%", ""))
             load_1m_number = float(load_1m)
+            nproc_number = int(nproc)
+            load_ratio = load_1m_number/nproc_number
             if disk_number > 90:
                 status.append("Critical")
             elif disk_number > 80:
@@ -101,17 +106,28 @@ def healt_evaluation(ssh_connection_result):
             elif memory_number > 80:
                 status.append("Warning")
             else:
-                status.append("Heatlhy")
-            print(status)
-            if load_1m_number:
-                print
-        except:
-            print("ssh error")
+                status.append("Healthy")
+            if load_ratio >= 1 :
+                status.append("Critical")
+            elif load_ratio > 0.7:
+                status.append("Warning")
+            else:
+                status.append("Healthy")
+            if "Critical" in status:
+                overal_status.append(f"Critical")
+            elif "Warning" in status:
+                overal_status.append("Warning")
+            else:
+                overal_status.append("Healthy")
+        else:
+            overal_status.append("Unreachable")
+    print(overal_status)
+        
             
 
 list_ips = read_list_servers()
 result_test_connection = test_connection(list_ips)
 ssh_connection_result = ssh_connection(result_test_connection)
+
 report_result_conneciton(result_test_connection)
-healt_evaluation(ssh_connection_result)
-print(ssh_connection_result)
+health_evaluation(ssh_connection_result)
